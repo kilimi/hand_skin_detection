@@ -209,6 +209,7 @@ int main(int argc, char *argv[]) {
        // cv::bitwise_and(maskHand, 255 - maskWithoutPalm, palm);
        // cv::Mat maskFinal;
        // cv::bitwise_or(palm, maskFingersProcessed, maskFinal);
+        showImage("Original", image);
         showImage("Mask", maskHand);
 
       /*  if (display) {
