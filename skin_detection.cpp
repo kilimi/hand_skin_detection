@@ -87,19 +87,19 @@ cv::Mat removePalm(cv::Mat mask, std::vector<std::vector<cv::Point> > contours, 
         cv::Mat maskDrawElipse = Mat::zeros( mask.size(), CV_8UC1 );
         cv::ellipse( maskDrawElipse, minEllipse, cv::Scalar(255), CV_FILLED, 8 );
         
-        cv::Mat element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( 16, 16 ), cv::Point( 5, 5 ) );
+        cv::Mat element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( 16, 16 ), cv::Point( 15, 15 ) );
         cv::dilate(maskDrawElipse, maskDrawElipse, element);
 
         cv::bitwise_xor(maskDrawElipse, mask, maskOut);
         if (display) {
             showImage("5. A small dilation & remove palm by fitting elipse to farthers defect points", maskOut);
         }
-        element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( 6, 6 ), cv::Point( 5, 5 ) );
+        element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( 11, 11 ), cv::Point( 10, 10 ) );
         cv::erode(maskOut, maskOut, element);
 
-    } catch (std::string er) {
+    } catch (char* er) {
        std::cout << "\033[1;31m" << er << " " << __func__ << "\033[0m\n";
-    } catch (std::string er) {
+    } catch (...) {
         std::cout << "\033[1;31mError occured in " << __func__ << "\033[0m\n";
     }
 
@@ -107,7 +107,7 @@ cv::Mat removePalm(cv::Mat mask, std::vector<std::vector<cv::Point> > contours, 
 }
 /****************************************************************************************************************************************/
 cv::Mat findAndProcessFingers(cv::Mat rgbImage, cv::Mat mask, bool display) {
-    cv::Mat maskOut = cv::Mat::zeros(mask.rows, mask.cols, CV_8UC1);
+    cv::Mat_<uchar> maskOut = cv::Mat::zeros(mask.rows, mask.cols, CV_8UC1);
    
     std::vector<std::vector<cv::Point> > contoursFingers;
     std::vector<cv::Vec4i> hierarchyFingers;
@@ -117,7 +117,7 @@ cv::Mat findAndProcessFingers(cv::Mat rgbImage, cv::Mat mask, bool display) {
     for( int i = 0; i < contoursFingers.size(); i++ ) {
         if (cv::contourArea(contoursFingers[i]) > 20000) {
 
-            cv::Mat finger = cv::Mat::zeros( mask.size(), CV_8UC1 );
+            cv::Mat_<uchar> finger = cv::Mat::zeros( mask.size(), CV_8UC1 );
             drawContours( finger, contoursFingers, i, cv::Scalar(255), CV_FILLED, 8, cv::Mat(), INT_MAX, cv::Point(-1,-1) );
 
             cv::Mat fingerRGB;
@@ -127,18 +127,50 @@ cv::Mat findAndProcessFingers(cv::Mat rgbImage, cv::Mat mask, bool display) {
 
             fingerRGB = fingerRGB(boundingRect);
 
+            cv::Mat_<uchar> foregnObjects;
             cv::cvtColor(fingerRGB, fingerRGB, CV_BGR2Lab);
-            cv::Mat foregnObjects;
-            cv::inRange(fingerRGB, cv::Scalar(0, 10, 0), cv::Scalar(255, 255, 131), foregnObjects);
-            int kernelSize = 55;
-            cv::Mat element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( kernelSize + 1, kernelSize + 1 ), cv::Point( kernelSize, kernelSize ) );
-        
-            //cv::dilate(foregnObjects, foregnObjects, element);
-            cv::bitwise_not(foregnObjects, foregnObjects);
-            foregnObjects.copyTo(maskOut(boundingRect));
+
+            if (boundingRect.width > boundingRect.height) {
+                int w = boundingRect.width / 3;
+                
+                for (size_t r = boundingRect.y; r < boundingRect.y + boundingRect.height; r++) {
+                    for (size_t c = boundingRect.x; c < boundingRect.x + w; c++) {
+                        maskOut(r, c) = finger(r, c);
+                    }
+                }
+                
+                fingerRGB = fingerRGB(cv::Rect(0 + w,  0, boundingRect.width - w, boundingRect.height));
+                cv::inRange(fingerRGB, cv::Scalar(0, 5, 0), cv::Scalar(255, 255, 131), foregnObjects);
+                cv::bitwise_not(foregnObjects, foregnObjects); 
+                
+                for (size_t r = boundingRect.y; r < boundingRect.y + boundingRect.height; r++) {
+                    for (size_t c = boundingRect.x + w; c < boundingRect.x + boundingRect.width; c++) {
+                        maskOut(r, c) = foregnObjects(r - boundingRect.y, c - boundingRect.x);
+                    }
+                }
+
+            } else {
+                int h = boundingRect.height / 3;
+
+                for (size_t r = boundingRect.y; r < boundingRect.y + h; r++) {
+                    for (size_t c = boundingRect.x; c < boundingRect.x + boundingRect.width; c++) {
+                        maskOut(r, c) = finger(r, c);
+                    }
+                }
+
+                fingerRGB = fingerRGB(cv::Rect(0,  0 + h, boundingRect.width, boundingRect.height - h));
+
+                cv::inRange(fingerRGB, cv::Scalar(0, 5, 0), cv::Scalar(255, 255, 131), foregnObjects);
+                cv::bitwise_not(foregnObjects, foregnObjects); 
+                for (size_t r = boundingRect.y + h; r < boundingRect.y + boundingRect.height; r++) {
+                    for (size_t c = boundingRect.x; c < boundingRect.x + boundingRect.width; c++) {
+                        maskOut(r, c) = foregnObjects(r - boundingRect.y, c - boundingRect.x);
+                    }
+                }                
+            }
+           
         }
     }
-    
     if (display) showImage("Processed segmented fingers", maskOut);
     return maskOut;
 
@@ -162,7 +194,7 @@ int main(int argc, char *argv[]) {
         cv::bitwise_not (mask, mask);
         if (display) showImage("1. Binary image after HSV thresholding", mask);
 
-        int kernelSize = 15;
+        int kernelSize = 9;
         cv::Mat element = getStructuringElement( cv::MORPH_ELLIPSE, cv::Size( kernelSize + 1, kernelSize + 1 ), cv::Point( kernelSize, kernelSize ) );
         cv::dilate(mask, mask, element);
         if (display) showImage("2. Filling mask holes with kernel size of " + to_string(kernelSize), mask);
@@ -170,22 +202,20 @@ int main(int argc, char *argv[]) {
         std::vector<std::vector<cv::Point> > contours;
         int largestContourId;
         cv::Mat maskHand = getLargestCountour(mask, contours, largestContourId, display);
-        cv::Mat maskWithoutPalm = removePalm(maskHand, contours, largestContourId, display);
-        cv::Mat maskFingersProcessed = findAndProcessFingers(image, maskWithoutPalm, display);
+       // cv::Mat maskWithoutPalm = removePalm(maskHand, contours, largestContourId, display);
+      //  cv::Mat maskFingersProcessed = findAndProcessFingers(image, maskWithoutPalm, display);
 
-        cv::Mat palm;
-        cv::bitwise_and(maskHand, 255 - maskWithoutPalm, palm);
-        showImage("palm", palm);
+       // cv::Mat palm;
+       // cv::bitwise_and(maskHand, 255 - maskWithoutPalm, palm);
+       // cv::Mat maskFinal;
+       // cv::bitwise_or(palm, maskFingersProcessed, maskFinal);
+        showImage("Mask", maskHand);
 
-        cv::Mat maskFinal;
-        cv::bitwise_or(palm, maskFingersProcessed, maskFinal);
-        showImage("Mask", maskFinal);
-
-        if (display) {
-        cv::Mat out;
-        image.copyTo(out, maskFinal);  
-        showImage("Segmented image", out);
-        }
+      /*  if (display) {
+            cv::Mat out;
+            image.copyTo(out, maskFinal);  
+            showImage("Segmented image", out);
+        } */
     }
 
     return 0;
